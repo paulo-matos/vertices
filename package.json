@@ -1,0 +1,11 @@
+{
+  "name": "vertices-artwork",
+  "version": "1.0.0",
+  "description": "A three.js artwork using Olta.js",
+  "main": "app.js",
+  "license": "MIT",
+  "dependencies": {
+    "@olta/js-sdk": "^0.3.3",
+    "three": "^0.164.1"
+  }
+}

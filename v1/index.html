@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" type="text/css" href="style.css" />
+    <title>Vertices</title>
+  </head>
+
+  <body>
+    <div id="loadingOverlay">
+      <div id="loadingDiv">
+        <svg viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="45"
+            fill="none"
+            stroke="#FFFFFF50"
+            stroke-width="10"
+          />
+          <circle
+            id="progress"
+            cx="50"
+            cy="50"
+            r="45"
+            fill="none"
+            stroke="white"
+            stroke-width="11"
+            stroke-dasharray="0 283"
+            stroke-linecap="round"
+          />
+        </svg>
+      </div>
+      <div id="popupMessage">
+        <span id="loadingText"></span>
+      </div>
+    </div>
+
+    <button id="addVertexButton">+</button>
+
+    <script type="module">
+      import { Olta } from "./lib/olta.module.js";
+      import * as THREE from "./lib/three.module.min.js";
+      import { OrbitControls } from "./lib/three.orbit-controls.js";
+
+      // First we need to initialize Olta in a variable like this
+      const olta = Olta();
+
+      // ----------- Loading Logic -----------
+      const timerSeconds = 1000; // Time between creating new interactions, in milliseconds (1000 = 10 seconds)
+
+      const progress = document.getElementById("progress");
+      const loadingText = document.getElementById("loadingText");
+      const loadingOverlay = document.getElementById("loadingOverlay");
+
+      let timeout;
+      let runningPlayback = false;
+      let walletAddress, fullWalletAddress, currentMessage;
+      let loading = false;
+      let timeLeft = timerSeconds;
+
+      // This is the default message the user will see when they interact before logging in (usually the first interaction)
+      const defaultMessage =
+        "Thanks for collaborating! Please make sure you are logged in";
+
+      // This is the array of possible messages that will be displayed to the user after interacting.
+      // Go ahead and add your own ideas, make it sound like yourself!
+      // Just be sure to keep the ${walletAddress} in the places you want it replaced by the user's Wallet Address
+      let messages = [
+        "${walletAddress} Thank you for your contribution!",
+        "Hi ${walletAddress}! You left your mark! 👍",
+        "You're way cooler than people think 😎 ${walletAddress}",
+        "Thanks for participating ${walletAddress}! 🔥",
+        "Hi ${walletAddress}! Thanks for collaborating with the artwork :)",
+      ];
+      // --------------------------------------
+
+      let scene, camera, renderer, controls;
+      let vertices = [];
+      let pendingVertices = [];
+      let lines = [];
+      let currentLine;
+      let drawing = false;
+      let drawIndex = 1;
+
+      init();
+      animate();
+
+      function init() {
+        // Create scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color("#101020");
+
+        // Create camera
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        camera.position.z = 5;
+
+        // Create renderer
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+
+        // Add initial vertices
+        addVertex(0, 0, 0);
+        addVertex(2, 2, 0);
+        addVertex(-2, 2, 0);
+
+        // Draw lines between vertices
+        drawLines();
+      }
+
+      // function setup() {
+      //   olta.onUpdate(() => {
+      //     vertices = olta.getAll("vertices");
+
+      //     // -Loading-
+      //     // This function retrieves the connected Othent Wallet to display while interacting
+      //     fullWalletAddress = olta.getActiveWalletAddress();
+
+      //     // only update the boxes if there are new boxes
+      //     if (!vertices || vertices.length < 1) {
+      //       return;
+      //     }
+
+      //     // reset pending boxes
+      //     pendingVertices = [];
+
+      //     // trigger p5 draw function
+      //     loop();
+      //   });
+      // }
+      function addVertex(x, y, z) {
+        const vertex = new THREE.Vector3(x, y, z);
+        vertices.push(vertex);
+
+        // Create a visible point for the vertex
+        const pointGeometry = new THREE.SphereGeometry(0.1, 32, 32); // Increase size to 0.1
+        const pointMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 }); // Orange color
+        const point = new THREE.Mesh(pointGeometry, pointMaterial);
+        point.position.set(x, y, z);
+        scene.add(point);
+
+        // If there are more than one vertex, prepare to draw a line
+        if (vertices.length > 1) {
+          const material = new THREE.LineBasicMaterial({ color: 0x0000ff });
+          const geometry = new THREE.BufferGeometry().setFromPoints([
+            vertices[drawIndex - 1],
+            vertices[drawIndex - 1],
+          ]);
+          currentLine = new THREE.Line(geometry, material);
+          lines.push(currentLine);
+          scene.add(currentLine);
+          drawing = true;
+        }
+      }
+
+      function drawLines() {
+        if (drawing) {
+          return;
+        }
+
+        if (drawIndex < vertices.length) {
+          const material = new THREE.LineBasicMaterial({ color: 0x0000ff });
+          const geometry = new THREE.BufferGeometry().setFromPoints([
+            vertices[drawIndex - 1],
+            vertices[drawIndex - 1],
+          ]);
+          currentLine = new THREE.Line(geometry, material);
+          lines.push(currentLine);
+          scene.add(currentLine);
+          drawing = true;
+        }
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+
+        console.log("vertices", vertices.length);
+
+        if (currentLine && drawing) {
+          const positions = currentLine.geometry.attributes.position.array;
+          const start = new THREE.Vector3(
+            positions[0],
+            positions[1],
+            positions[2]
+          );
+          const end = vertices[drawIndex];
+
+          // Interpolation factor (can be adjusted for speed)
+          const alpha = 0.03;
+          const currentEnd = new THREE.Vector3(
+            positions[3],
+            positions[4],
+            positions[5]
+          );
+          const newEnd = currentEnd.clone().lerp(end, alpha);
+
+          positions[3] = newEnd.x;
+          positions[4] = newEnd.y;
+          positions[5] = newEnd.z;
+
+          currentLine.geometry.attributes.position.needsUpdate = true;
+
+          if (newEnd.distanceTo(end) < 0.01) {
+            positions[3] = end.x;
+            positions[4] = end.y;
+            positions[5] = end.z;
+            currentLine.geometry.attributes.position.needsUpdate = true;
+            currentLine = null;
+            drawing = false;
+            drawIndex++;
+          }
+        }
+
+        controls.update();
+
+        drawLines();
+      }
+
+      // function draw() {
+      //   // ----------- Loading Logic -----------
+      //   // Checking if the artwork is in a loading state
+      //   if (loading) {
+      //     // Displaying the loading elements
+      //     loadingOverlay.style.display = "block";
+
+      //     // Starting timer to prevent user from interacting for duration of loading feature
+      //     var timer = setInterval(() => {
+      //       timeLeft -= 1;
+      //       const dashOffset = ((timerSeconds - timeLeft) / timerSeconds) * 283;
+      //       progress.style.strokeDasharray = `${dashOffset} 360`;
+      //       // When the timer finishes, reset status
+      //       if (timeLeft <= 0) {
+      //         loading = false;
+      //         clearInterval(timer);
+      //         loadingOverlay.style.display = "none";
+      //         return;
+      //       }
+      //     }, 10);
+      //   } else {
+      //     // When there's no loading state, reset the status
+      //     timeLeft = timerSeconds;
+      //     loadingOverlay.style.display = "none";
+      //   }
+      //   // ------------------------------------------------
+
+      //   if (!boxes || boxes.length < 1) {
+      //     return;
+      //   }
+
+      //   // draw boxes
+      //   boxes?.forEach((box, index) => {
+      //     // convert box.x and box.y from a percentage to coordinates
+      //     const x = percentageOf(windowWidth, box.x);
+      //     const y = percentageOf(windowHeight, box.y);
+
+      //     // render box
+      //     fill(box.color);
+      //     rect(x, y, box.size * scale, box.size * scale);
+      //   });
+
+      //   // draw pending boxes
+      //   noFill();
+      //   pendingBoxes?.forEach((pendingBox, index) => {
+      //     // convert pendingBox.x and pendingBox.y from a percentage to coordinates
+      //     const x = percentageOf(windowWidth, pendingBox.x);
+      //     const y = percentageOf(windowHeight, pendingBox.y);
+
+      //     // render outline of pending box
+      //     stroke(255, 0, 0);
+      //     rect(x, y, pendingBox.size * scale, pendingBox.size * scale);
+      //   });
+
+      //   // only run draw function once
+      //   noLoop();
+      // }
+
+      // function mousePressed() {
+      //   clearTimeout(timeout);
+
+      //   if (runningPlayback === true) {
+      //     clear();
+      //     background(0);
+
+      //     pendingBoxes = [];
+
+      //     const list = olta.getAll("boxes");
+
+      //     list.forEach((item, index) => {
+      //       const x = percentageOf(windowWidth, item.x);
+      //       const y = percentageOf(windowHeight, item.y);
+
+      //       fill(item.color);
+      //       rect(x, y, item.size * scale, item.size * scale);
+      //     });
+
+      //     runningPlayback = false;
+      //   } else {
+      //     // create a random new box based on mouse position
+      //     const box = {
+      //       color: Math.random() * 255,
+      //       size: 1 + Math.random() * 2,
+      //       x: (mouseX / windowWidth) * 100,
+      //       y: (mouseY / windowHeight) * 100,
+      //     };
+
+      //     // create a new box at the location of the mouse
+      //     if (!loading) {
+      //       olta.create("boxes", box);
+
+      //       // add the box to the pendingBoxes array so we can render it in the p5 draw function
+      //       pendingBoxes.push(box);
+
+      //       // ----------- Loading Logic -----------
+      //       loading = true;
+      //       timeLeft = timerSeconds;
+
+      //       generateRandomMessage().then((message) => {
+      //         currentMessage = message;
+      //         loadingText.innerHTML = currentMessage;
+      //       });
+      //       // -------------------------------------
+
+      //       // trigger p5 draw function
+      //       loop();
+      //     }
+
+      //     timeoutFunction();
+      //   }
+      // }
+
+      // Resize the renderer with the window
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      document
+        .getElementById("addVertexButton")
+        .addEventListener("click", () => {
+          const randomPosition = () => (Math.random() - 0.5) * 100; // -50 to 50
+          addVertex(randomPosition(), randomPosition(), randomPosition());
+        });
+
+      // ----------- Function for Loading Logic -----------
+      // async function generateRandomMessage() {
+      //   let fullWalletAddress = await olta.getActiveWalletAddress();
+      //   if (fullWalletAddress) {
+      //     let walletAddress =
+      //       fullWalletAddress.slice(0, 4) + "..." + fullWalletAddress.slice(-4);
+      //     let randomIndex = Math.floor(Math.random() * messages.length);
+
+      //     let finalMessage = messages[randomIndex].replace(
+      //       "${walletAddress}",
+      //       `<strong>${walletAddress}</strong>`
+      //     );
+
+      //     return finalMessage;
+      //   } else {
+      //     return defaultMessage;
+      //   }
+      // }
+
+      // function timeoutFunction() {
+      //   timeout = setTimeout(() => {
+      //     runningPlayback = true;
+
+      //     const list = olta.getAll("boxes");
+      //     const initialStateItems = list.filter(
+      //       (item) => typeof item._id === "number"
+      //     );
+      //     const itemsToShow = list.slice(initialStateItems.length);
+
+      //     let showQueue = [];
+
+      //     clear();
+      //     background(0);
+
+      //     initialStateItems.map((box) => {
+      //       const x = percentageOf(windowWidth, box.x);
+      //       const y = percentageOf(windowHeight, box.y);
+      //       fill(box.color);
+      //       rect(x, y, box.size * scale, box.size * scale);
+      //     });
+
+      //     itemsToShow.map((item, index) => {
+      //       setTimeout(() => {
+      //         if (runningPlayback === false) {
+      //           return;
+      //         }
+
+      //         const x = percentageOf(windowWidth, item.x);
+      //         const y = percentageOf(windowHeight, item.y);
+
+      //         fill(item.color);
+      //         rect(x, y, item.size * scale, item.size * scale);
+
+      //         if (index === itemsToShow.length - 1) {
+      //           runningPlayback = false;
+      //         }
+      //       }, index * 15000);
+      //     });
+      //   }, 300000);
+      // }
+
+      // timeoutFunction();
+    </script>
+  </body>
+</html>
